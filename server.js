@@ -1,31 +1,34 @@
 const express = require("express");
-const { runWorker } = require("./parent");
+const { fork } = require("child_process");
+const path = require("path");
 const app = express();
 
-/**
- * Endpoint to check if a number is prime.
- * Uses child2.js because prime checking is considered an advanced operation.
- */
+function runService(workerData) {
+  return new Promise((resolve, reject) => {
+    const worker = fork(path.resolve(__dirname, "child.js"));
+    worker.send(workerData);
+    worker.on("message", resolve);
+    worker.on("error", reject);
+    worker.on("exit", (code) => {
+      if (code !== 0) reject(new Error(`Worker stopped with exit code ${code}`));
+    });
+  });
+}
+
 app.get("/num", async (req, res) => {
-  const number = parseInt(req.query.num, 10);
-  if (isNaN(number)) {
+  const num = parseInt(req.query.num, 10);
+  if (isNaN(num)) {
     return res.status(400).json({ error: "Invalid number" });
   }
   try {
-    const isPrime = await runWorker("./child2.js", {
-      operation: "isPrime",
-      number
-    });
-    res.json({ number, isPrime });
+    const isPrime = await runService({ operation: "isPrime", number: num });
+    const result = { number: num, isPrime };
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * Endpoint to check two numbers for primality concurrently.
- * Both workers use child2.js.
- */
 app.get("/:num1/:num2", async (req, res) => {
   const num1 = parseInt(req.params.num1, 10);
   const num2 = parseInt(req.params.num2, 10);
@@ -34,22 +37,17 @@ app.get("/:num1/:num2", async (req, res) => {
   }
   try {
     const [isPrime1, isPrime2] = await Promise.all([
-      runWorker("./child2.js", { operation: "isPrime", number: num1 }),
-      runWorker("./child2.js", { operation: "isPrime", number: num2 })
+      runService({ operation: "isPrime", number: num1 }),
+      runService({ operation: "isPrime", number: num2 })
     ]);
-    res.json({
-      result1: { number: num1, isPrime: isPrime1 },
-      result2: { number: num2, isPrime: isPrime2 }
-    });
+    const result1 = { number: num1, isPrime: isPrime1 };
+    const result2 = { number: num2, isPrime: isPrime2 };
+    res.json({ result1, result2 });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * Endpoints for basic arithmetic operations (addition and subtraction)
- * These are handled by child1.js.
- */
 app.get("/sum/:num1/:num2", async (req, res) => {
   const num1 = parseInt(req.params.num1, 10);
   const num2 = parseInt(req.params.num2, 10);
@@ -57,11 +55,7 @@ app.get("/sum/:num1/:num2", async (req, res) => {
     return res.status(400).json({ error: "Invalid numbers" });
   }
   try {
-    const sum = await runWorker("./child1.js", {
-      operation: "sum",
-      num1,
-      num2
-    });
+    const sum = await runService({ operation: "sum", num1, num2 });
     res.json({ sum });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -75,21 +69,13 @@ app.get("/sub/:num1/:num2", async (req, res) => {
     return res.status(400).json({ error: "Invalid numbers" });
   }
   try {
-    const difference = await runWorker("./child1.js", {
-      operation: "sub",
-      num1,
-      num2
-    });
+    const difference = await runService({ operation: "sub", num1, num2 });
     res.json({ difference });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * Endpoints for advanced arithmetic operations (multiplication, division, modulus)
- * These are handled by child2.js.
- */
 app.get("/mul/:num1/:num2", async (req, res) => {
   const num1 = parseInt(req.params.num1, 10);
   const num2 = parseInt(req.params.num2, 10);
@@ -97,11 +83,7 @@ app.get("/mul/:num1/:num2", async (req, res) => {
     return res.status(400).json({ error: "Invalid numbers" });
   }
   try {
-    const product = await runWorker("./child2.js", {
-      operation: "mul",
-      num1,
-      num2
-    });
+    const product = await runService({ operation: "mul", num1, num2 });
     res.json({ product });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -115,11 +97,7 @@ app.get("/div/:num1/:num2", async (req, res) => {
     return res.status(400).json({ error: "Invalid numbers or division by zero" });
   }
   try {
-    const quotient = await runWorker("./child2.js", {
-      operation: "div",
-      num1,
-      num2
-    });
+    const quotient = await runService({ operation: "div", num1, num2 });
     res.json({ quotient });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -133,11 +111,7 @@ app.get("/mod/:num1/:num2", async (req, res) => {
     return res.status(400).json({ error: "Invalid numbers or modulus by zero" });
   }
   try {
-    const modulus = await runWorker("./child2.js", {
-      operation: "mod",
-      num1,
-      num2
-    });
+    const modulus = await runService({ operation: "mod", num1, num2 });
     res.json({ modulus });
   } catch (err) {
     res.status(500).json({ error: err.message });
